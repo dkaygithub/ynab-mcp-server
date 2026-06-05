@@ -3,7 +3,7 @@
 These changes live in the **operator-managed** `~/projects/bexar-egress-proxy/`
 stack (not in agent reach). They mirror the existing `egress-proxy-hub` /
 `ingress-edge` blocks. Apply once, then `docker compose up -d` that stack
-BEFORE bringing up ynab-mcp (whose `compose.yml` requires the external
+BEFORE bringing up ynab-mcp (whose `docker-compose.yml` requires the external
 `bexar-egress-ynab` network).
 
 ## 1. `bexar-egress-proxy/compose.yml`
