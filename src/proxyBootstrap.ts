@@ -1,16 +1,23 @@
 // Egress proxy bootstrap — MUST be imported before anything that makes
 // outbound HTTP calls (i.e. before the `ynab` SDK).
 //
-// The ynab SDK uses fetch-ponyfill -> node-fetch@2, which (unlike Python's
-// requests/httplib2 used by the hub stack) does NOT honor HTTP_PROXY/HTTPS_PROXY
-// environment variables on its own. global-agent patches Node's global
-// http/https agents so node-fetch's requests tunnel through the egress proxy.
+// Unlike Python's requests/httplib2 (used by the hub stack), Node HTTP clients
+// do NOT honor HTTP_PROXY/HTTPS_PROXY on their own. The ynab SDK's runtime uses
+// `globalThis.fetch` — i.e. Node's built-in undici fetch — falling back to
+// fetch-ponyfill -> node-fetch@2 only on runtimes without a global fetch. So we
+// route BOTH:
+//   1. undici (the actual path on Node >=18): set a global EnvHttpProxyAgent
+//      dispatcher. global-agent does NOT intercept undici, which is why proxy
+//      env alone silently bypassed the proxy.
+//   2. node-fetch fallback: global-agent patches Node's http/https global
+//      agents.
 //
-// We set the namespace to '' so global-agent reads the STANDARD proxy var
-// names (HTTP_PROXY / HTTPS_PROXY / NO_PROXY) that the bexar egress convention
-// injects via compose — matching hub's `HTTPS_PROXY: http://egress-proxy-*:3128`.
-//
-// No-op when no proxy vars are set (local/standalone runs go direct).
+// Standard proxy var names (HTTP_PROXY / HTTPS_PROXY / NO_PROXY) are used to
+// match the bexar egress convention injected via compose. No-op when no proxy
+// vars are set (local/standalone runs go direct).
+import { setGlobalDispatcher, EnvHttpProxyAgent } from "undici";
+
+// global-agent reads STANDARD var names when the namespace is ''.
 process.env.GLOBAL_AGENT_ENVIRONMENT_VARIABLE_NAMESPACE =
   process.env.GLOBAL_AGENT_ENVIRONMENT_VARIABLE_NAMESPACE ?? "";
 
@@ -19,8 +26,10 @@ import { bootstrap } from "global-agent";
 bootstrap();
 
 if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
+  // EnvHttpProxyAgent reads HTTP_PROXY/HTTPS_PROXY/NO_PROXY from the environment.
+  setGlobalDispatcher(new EnvHttpProxyAgent());
   console.error(
-    `[ynab] egress proxy active: ${process.env.HTTPS_PROXY || process.env.HTTP_PROXY}` +
+    `[ynab] egress proxy active (undici + global-agent): ${process.env.HTTPS_PROXY || process.env.HTTP_PROXY}` +
       (process.env.NO_PROXY ? ` (no_proxy: ${process.env.NO_PROXY})` : ""),
   );
 }
