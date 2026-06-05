@@ -1,0 +1,49 @@
+# ynab-mcp compose — bexar egress/ingress posture (matches hub).
+#
+# Network posture:
+#   - bexar-egress-ynab is an EXTERNAL network created by the shared
+#     egress-proxy stack at ~/projects/bexar-egress-proxy/. That stack also runs
+#     the egress-proxy-ynab tinyproxy instance, which bind-mounts THIS repo's
+#     tools/egress/ynab.allowlist read-only, and the ingress-edge nginx that
+#     reverse-proxies a host port to ynab-mcp:4322.
+#   - The network is internal:true (no direct NAT). All outbound YNAB API calls
+#     go through the egress proxy (see HTTPS_PROXY below); the global-agent
+#     bootstrap in the app forces node-fetch through it.
+#   - 'external: true' refuses to start until that network exists, so bring the
+#     bexar-egress-proxy stack UP FIRST. That is the safety net.
+#
+# Standalone/local dev (no proxy, direct egress) does NOT use this file — use
+#   `npm run start:http`  or  `docker run -i --rm --env-file ./data/ynab.env ...`.
+services:
+  ynab-mcp:
+    build: .
+    image: ynab-mcp-server
+    container_name: ynab-mcp
+    restart: unless-stopped
+    # Static YNAB personal access token (data/ynab.env is gitignored).
+    env_file:
+      - ./data/ynab.env
+    environment:
+      # All outbound traffic tunnels through the per-service tinyproxy.
+      # global-agent reads these standard names (see src/proxyBootstrap.ts).
+      HTTP_PROXY: http://egress-proxy-ynab:3128
+      HTTPS_PROXY: http://egress-proxy-ynab:3128
+      NO_PROXY: localhost,127.0.0.1
+      http_proxy: http://egress-proxy-ynab:3128
+      https_proxy: http://egress-proxy-ynab:3128
+      no_proxy: localhost,127.0.0.1
+      PORT: "4322"
+      HOST: "0.0.0.0"
+    networks:
+      - bexar-egress-ynab
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4322/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  bexar-egress-ynab:
+    external: true
+    name: bexar-egress-ynab
