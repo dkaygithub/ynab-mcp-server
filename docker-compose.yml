@@ -37,7 +37,10 @@ services:
     networks:
       - bexar-egress-ynab
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4322/healthz"]
+      # Clear proxy vars for this probe: alpine/BusyBox wget honors http_proxy
+      # but NOT no_proxy, so without this it would route the loopback request
+      # through egress-proxy-ynab, which filters 127.0.0.1 -> false "unhealthy".
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -q --spider http://127.0.0.1:4322/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
